@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Run tests
+        # Stubs raise NotImplementedError, which conftest.py records as xfail, so the
+        # build is green now and each component's tests flip to real passes as it is
+        # implemented. Unit tests only — they never touch a live Elasticsearch.
+        run: uv run --group dev python -m pytest tests/ -q
