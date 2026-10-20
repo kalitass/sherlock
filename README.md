@@ -31,8 +31,11 @@ datasets/                 # dataset onboarding (see Data below)
 tests/                    # acceptance tests — the spec for each component
 ```
 
-**Boundary rule:** a component imports only from `core`; `core` imports no component.
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md).
+**Dependency rule:** components depend on `core`; `core` depends on no component. The
+only inter-component edge is **ingestion → normalization** (normalization runs inside
+the ingest pipeline). The graph is acyclic, so each slice is still built and tested
+independently against the others' stable interfaces. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+and [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md).
 
 ## Data
 

@@ -15,8 +15,12 @@ via Docker); the unit tests do not touch it.
 
 ## The one rule that keeps us un-blocked
 
-- A `components/<x>/` package imports **only** from `core` — never from another
-  `components/` package.
+- A `components/<x>/` package imports from `core` only — with **one documented
+  exception**: `ingestion` imports `normalization` (the ingest pipeline normalises
+  each record to `n_*` as it indexes it). That is the only inter-component edge, and
+  the dependency graph is acyclic (`normalization` is a leaf that imports nothing of
+  ours), so you can still implement your slice against the others' stable interfaces.
+  Do not add any other component-to-component import.
 - `core/` never imports from `components/`.
 - The shapes that cross a boundary live in `core/contracts.py`. Need to change one?
   Change it there and message the other owners. Never redefine a shared shape inside

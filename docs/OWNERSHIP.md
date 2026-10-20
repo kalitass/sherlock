@@ -5,10 +5,12 @@ implementable slices. Each member owns one slice: its directory, its section of 
 report, and its part of the demo/pitch. **You implement your slice against the
 reference implementation in the sibling `sherlock-demo/` repo** until your tests pass.
 
-> **Boundary rule.** A `components/<x>/` package may import **only** from `core`
-> (contracts, settings, ES, the MCP tool surface) — never from another component.
-> `core` imports nothing from `components`. This is what lets five people work in
-> parallel without merge collisions.
+> **Dependency rule.** A `components/<x>/` package imports from `core` (contracts,
+> settings, ES, the MCP tool surface), with one documented exception: **ingestion
+> imports normalization** (the ingest pipeline normalises each record to `n_*`). That
+> is the only inter-component edge; the graph is acyclic (`normalization` is a leaf),
+> and `core` imports nothing from `components`. This is what lets five people work in
+> parallel without merge collisions. Add no other component-to-component import.
 
 ## Who owns what
 
