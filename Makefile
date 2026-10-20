@@ -1,18 +1,17 @@
 # Sherlock — one-command operations. Requires Docker + uv.
 H ?= An external actor brute-forced the administrator account and gained access
 
-.PHONY: help up down wipe install seed siem scenario hunt experiment dashboard mcp status schemas providers pull-watch stream-demo demo
+.PHONY: help up down wipe install mordor sigma hunt experiment dashboard mcp status schemas providers pull-watch stream-demo demo
 
 help:
 	@echo "make up         - start Elasticsearch + Kibana (Docker)"
 	@echo "make install    - create the Python venv (uv sync)"
-	@echo "make seed       - generate + agentically ingest 3 log types"
-	@echo "make siem       - onboard the incident in 7 SIEM schemas (CEF/LEEF/CIM/ECS/OCSF/ASIM/UDM)"
-	@echo "make scenario   - load extra test scenarios (benign / password-spray / data-exfil)"
+	@echo "make mordor     - ingest the public OTRF Security-Datasets (ATT&CK-labelled)"
+	@echo "make sigma      - migrate Sigma detection rules into canonical n_* detections"
 	@echo "make dashboard  - run the web dashboard (http://localhost:8080)"
 	@echo "make hunt H='..'- run a hunt from the CLI"
 	@echo "make experiment H='..' - run the same hunt twice and diff"
-	@echo "make demo       - up + install + seed + dashboard (full local bring-up)"
+	@echo "make demo       - up + install + mordor + dashboard (full local bring-up)"
 	@echo "make status     - cluster/index overview"
 	@echo "make down       - stop containers   |   make wipe - stop + delete data"
 
@@ -31,14 +30,8 @@ wipe:
 install:
 	uv sync
 
-seed: install
-	uv run python -m app.cli seed $(if $(LLM),,--no-llm)
-
-siem: install
-	uv run python -m app.cli siem $(if $(LLM),,--no-llm)
-
-scenario: install
-	uv run python -m app.cli scenario $(NAME)
+mordor: install
+	uv run python -m app.cli mordor $(LABELS)
 
 sigma: install
 	uv run python -m app.cli sigma $(if $(LLM),--llm,) $(FILES)
@@ -68,8 +61,8 @@ pull-watch: install
 	uv run python -m ingestion.pull
 
 stream-demo: install
-	uv run python -m ingestion.stream --send datasets/generated/web_access.log
+	uv run python -m ingestion.stream --send $(FILE)
 
-demo: up install seed
+demo: up install mordor
 	@echo "\n>>> Bring-up complete. Starting dashboard on http://localhost:8080\n"
 	uv run python -m app.cli dashboard

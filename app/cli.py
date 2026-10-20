@@ -1,6 +1,6 @@
 """Sherlock command-line interface.
 
-  uv run sherlock seed                 # generate + agentically ingest 3 log types
+  uv run sherlock mordor               # ingest the public OTRF Security-Datasets
   uv run sherlock ingest <path>        # ingest one file via auto-schema (pull)
   uv run sherlock hunt "<hypothesis>"  # run a threat hunt, print the report
   uv run sherlock experiment "<hyp>"   # run the same hunt twice and diff
@@ -24,94 +24,28 @@ from rich.table import Table
 console = Console()
 
 
-def _seed(args) -> None:
-    from datasets import generate
+def _mordor(args) -> None:
+    """Ingest the public, ATT&CK-labelled OTRF Security-Datasets through the normal
+    agentic auto-schema path. This is Sherlock's only data source — no synthetic data.
+    See docs/DATA_SOURCES.md for provenance (https://github.com/OTRF/Security-Datasets)."""
+    from datasets.mordor_import import import_all
     from core.es import ensure_state_indices, wait_until_ready
-    from components.ingestion.ingest_core import ingest_file
-    from core.settings import settings
 
     if not wait_until_ready(90):
         console.print("[red]Elasticsearch is not reachable. Run `make up` first.[/red]")
         sys.exit(1)
     ensure_state_indices()
-    console.print("[bold]Generating datasets…[/bold]")
-    generate.main()
-    gen = Path(generate.__file__).resolve().parent / "generated"
-    use_llm = not args.no_llm
-    table = Table(title="Agentic ingestion (auto-schema)")
-    for col in ("file", "log_type", "indexed", "failures", "schema by", "parse rate", "reused"):
+    console.print("[bold]Ingesting public OTRF Security-Datasets (auto-schema)…[/bold]")
+    rows = import_all(args.labels or None)
+    table = Table(title="OTRF ingestion — public ATT&CK-labelled telemetry")
+    for col in ("index", "ATT&CK", "indexed", "schema by", "ok"):
         table.add_column(col)
-    for f in ["windows_security.json", "sysmon.json", "web_access.log"]:
-        s = ingest_file(gen / f, mode="pull", use_llm=use_llm)
-        table.add_row(f, s["log_type"], str(s["count_indexed"]), str(s["failures"]),
-                      str(s["created_by"]), str(s["parse_rate"]), str(s["schema_reused"]))
+    for s in rows:
+        table.add_row(str(s.get("index")), str(s.get("technique")), str(s.get("count_indexed")),
+                      str(s.get("created_by")), str(s.get("ok")))
     console.print(table)
-    console.print(f"[green]Seed complete.[/green] Drop dir for pull ingestion: {settings.drop_dir}")
-
-
-def _siem(args) -> None:
-    """Onboard the same incident exported in the seven famous SIEM schemas (SE6014
-    Week 2: CEF, LEEF, CIM, ECS, OCSF, ASIM, UDM) and normalise them all onto one
-    canonical field set — "one event, seven spellings; normalise first"."""
-    from datasets import siem_samples
-    from core.es import ensure_state_indices, wait_until_ready
-    from components.ingestion.ingest_core import ingest_file
-
-    if not wait_until_ready(90):
-        console.print("[red]Elasticsearch is not reachable. Run `make up` first.[/red]")
-        sys.exit(1)
-    ensure_state_indices()
-    console.print("[bold]Generating the incident in all seven SIEM schemas…[/bold]\n")
-    siem_samples.main()
-
-    table = Table(title="Cross-schema onboarding + normalisation (SE6014 Week 2)")
-    for col in ("file", "side", "schema", "log_type", "indexed", "parse rate", "drift"):
-        table.add_column(col)
-    files = [("cef.log", "producer", "CEF (ArcSight)"), ("leef.log", "producer", "LEEF (QRadar)"),
-             ("cim.json", "consumer", "CIM (Splunk)"), ("ecs.json", "consumer", "ECS (Elastic)"),
-             ("ocsf.json", "consumer", "OCSF"), ("asim.json", "consumer", "ASIM (Sentinel)"),
-             ("udm.json", "consumer", "UDM (Google)")]
-    for fname, side, label in files:
-        s = ingest_file(siem_samples.OUT / fname, mode="pull", use_llm=False)
-        ok = "[green]{}[/green]" if s["ok"] else "[red]{}[/red]"
-        drift = (s.get("drift") or {}).get("status", "-")
-        table.add_row(fname, side, label, s["log_type"], str(s["count_indexed"]),
-                      ok.format(s.get("parse_rate")), drift)
-    console.print(table)
-    console.print("\n[bold]Normalise first:[/bold] one query now fires across every schema, e.g.")
-    console.print("  [dim]uv run python -m cli hunt \"brute force against the administrator account "
-                  "from an external IP\"[/dim]")
-    console.print("  [dim]# each schema's index carries canonical n_user / n_src_ip / n_event_id / "
-                  "n_action fields[/dim]")
-
-
-def _scenario(args) -> None:
-    """Load extra test scenarios (authored in the canonical/normalised schema)."""
-    from datasets import scenarios as sc
-    from core.es import ensure_state_indices, wait_until_ready
-    from components.ingestion.ingest_core import ingest_records
-
-    names = list(sc.SCENARIOS) if args.name in (None, "all") else [args.name]
-    if args.name and args.name not in sc.SCENARIOS and args.name != "all":
-        console.print(f"[red]unknown scenario '{args.name}'.[/red] Available: {list(sc.SCENARIOS)}")
-        sys.exit(1)
-    if not wait_until_ready(90):
-        console.print("[red]Elasticsearch is not reachable. Run `make up` first.[/red]")
-        sys.exit(1)
-    ensure_state_indices()
-
-    table = Table(title="Test scenarios (canonical schema)")
-    for col in ("scenario", "host", "events", "index", "test hypothesis → expected"):
-        table.add_column(col, overflow="fold")
-    for name in names:
-        meta = sc.SCENARIOS[name]
-        events = sc.build(name)
-        s = ingest_records(f"scn_{name}", events, source=f"scenario:{name}", mode="pull", use_llm=False)
-        table.add_row(name, meta["host"], str(s["count_indexed"]), s["index"],
-                      f"\"{meta['hypothesis']}\"\n→ {meta['expected']}")
-    console.print(table)
-    console.print("\nHunt a scenario (LLM engine recommended; benign also works deterministically):")
-    console.print("  [dim]SHERLOCK_LLM_PROVIDER=deepseek uv run python -m cli hunt \"<the hypothesis above>\"[/dim]")
+    console.print("[green]Ingestion complete.[/green] Hunt with: "
+                  "[dim]uv run python -m cli hunt \"Was a backdoor account created?\"[/dim]")
 
 
 def _ingest(args) -> None:
@@ -230,26 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="sherlock", description="Agentic threat hunting on ELK")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("seed", help="generate + ingest 3 log types")
-    sp.add_argument("--no-llm", action="store_true", help="use deterministic schema detection")
-    sp.set_defaults(func=_seed)
+    mp = sub.add_parser("mordor", help="ingest the public OTRF Security-Datasets (ATT&CK-labelled)")
+    mp.add_argument("labels", nargs="*", help="dataset labels to ingest (default: all)")
+    mp.set_defaults(func=_mordor)
 
     ip = sub.add_parser("ingest", help="ingest one file via auto-schema")
     ip.add_argument("path"); ip.add_argument("--mode", default="pull")
     ip.add_argument("--no-llm", action="store_true"); ip.set_defaults(func=_ingest)
 
-    siem = sub.add_parser("siem", help="onboard the incident from 7 SIEM schemas (CEF/LEEF/CIM/ECS/OCSF/ASIM/UDM)")
-    siem.add_argument("--no-llm", action="store_true")
-    siem.set_defaults(func=_siem)
-
     sg = sub.add_parser("sigma", help="migrate Sigma detection rules into canonical n_* detections")
-    sg.add_argument("paths", nargs="*", help="Sigma .yml files (default: components/detection/sigma_samples/*)")
+    sg.add_argument("paths", nargs="*", help="Sigma .yml files (default: detections/sigma_samples/*)")
     sg.add_argument("--llm", action="store_true", help="use the LLM to map unknown fields")
     sg.set_defaults(func=_sigma)
-
-    scn = sub.add_parser("scenario", help="load extra test scenarios (benign / password-spray / data-exfil)")
-    scn.add_argument("name", nargs="?", default="all", help="scenario name, or 'all'")
-    scn.set_defaults(func=_scenario)
 
     hp = sub.add_parser("hunt", help="run a threat hunt")
     hp.add_argument("hypothesis")

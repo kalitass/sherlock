@@ -103,13 +103,13 @@ CASES: list[Case] = [
          "A scheduled task was created to establish persistence on this host.",
          "refuted", "No scheduled-task creation present."),
 
-    # ---- NEGATIVES on the clean baseline day (false-positive control) ----
-    Case("benign.nobrute", "scn_benign",
-         "The administrator account was brute-forced and then used to log in.",
-         "refuted", "Benign day: normal interactive logons only."),
-    Case("benign.noaccount", "scn_benign",
-         "A backdoor user account was created on this host.",
-         "refuted", "Benign day: no account creation."),
+    # ---- NEGATIVES: cross-dataset (ask a capture about a technique it lacks) ----
+    Case("mshta.nobrute", "mordor_mshta_exec",
+         "The administrator account was brute-forced with many failed logon attempts.",
+         "refuted", "mshta-execution capture — no 4625 failed-logon bursts present."),
+    Case("sam.noschtask", "mordor_sam_dump",
+         "A scheduled task was created to establish persistence on this host.",
+         "refuted", "SAM-theft capture — no scheduled-task creation present."),
 ]
 
 
@@ -214,7 +214,7 @@ def _write_md(res: dict[str, Any], suffix: str = "") -> None:
     ]
     for m in MANIFEST:
         md.append(f"| `mordor_{m.label}` | {m.technique} | {m.technique_name} | {m.ground_truth} |")
-    md += ["| `scn_benign` | — | (clean baseline) | A normal working day: no attack. |", ""]
+    md += [""]
 
     md += ["## Per-hypothesis results", "",
            "| Case | Scope | Ground truth | RAW (LLM) | HARNESS | Claims | Rejected | Correct (harness) |",

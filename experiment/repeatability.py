@@ -26,8 +26,8 @@ PAIRS = [
      "A new local user account was created on this host, consistent with an attacker planting a backdoor account."),
     ("lsass.dump", "mordor_lsass_dump",
      "A process accessed the memory of the LSASS process in order to steal credentials."),
-    ("benign.nobrute", "scn_benign",
-     "The administrator account was brute-forced and then used to log in."),
+    ("mshta.nobrute", "mordor_mshta_exec",
+     "The administrator account was brute-forced with many failed logon attempts."),
     ("adv.logclear", "mordor_logtamper",
      "The attacker cleared the Windows Security event log (event ID 1102) to destroy forensic evidence."),
 ]
