@@ -18,17 +18,15 @@
 
 ## Table of Contents
 
-**Shared**
-- 1. Executive Summary (non-technical)
-- 7. Conclusion — Limitations & Next Steps
-- Appendix A — Division of Labour & Timesheet
+**Shared:** §1 Executive Summary (non-technical) · §7 Conclusion (Limitations & Next Steps) · Appendix A (Division of Labour & Timesheet)
 
-**One section per member (edit your own):**
-- 2. System Architecture & Reproducible Setup — **P1**
-- 3. Ingestion & Agentic Auto-schema — **P2**
-- 4. Interoperability — Normalise-first & Sigma — **P3**
-- 5. Agentic Workflow Design — **P4**
-- 6. Guardrails & Experiment Results — **P5**
+**One section per member — edit only your own:**
+
+- §2 · System Architecture & Reproducible Setup — **P1**
+- §3 · Ingestion & Agentic Auto-schema — **P2**
+- §4 · Interoperability — Normalise-first & Sigma — **P3**
+- §5 · Agentic Workflow Design — **P4**
+- §6 · Guardrails & Experiment Results — **P5**
 
 > **How to edit this report.** Sections 2–6 are one-per-member: edit *only* your own
 > section. Section 1 (lead: P1) and Section 7 are written together; whoever changes a
