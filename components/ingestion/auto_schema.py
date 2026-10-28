@@ -128,9 +128,56 @@ def _llm_propose(llm: LLMClient, log_type: str, sample: list[Any]) -> dict[str, 
 def detect_and_register(
     log_type: str, sample: list[Any], source: str = "unknown", use_llm: bool = True
 ) -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P2: fingerprint the sample; reuse a registered schema if it still "
-        "validates, else propose one (LLM optional + heuristic), validate it, and "
-        "register it when the parse rate clears MIN_PARSE_RATE (else quarantine). "
-        "Reference implementation: sherlock-demo/ingestion/auto_schema.py."
-    )
+    fp = reg.fingerprint(sample, log_type)
+    existing = reg.get_by_fingerprint(fp)
+    if existing and existing.get("log_type") == log_type:
+        # Reuse is safe only when the registered parser still validates against
+        # the new sample. A matching fingerprint alone is not enough.
+        rate, _ = _validate(existing, sample)
+        if rate >= MIN_PARSE_RATE:
+            existing["reused"] = True
+            existing["registered"] = True
+            return existing
+
+    llm = LLMClient()
+    candidate = _llm_propose(llm, log_type, sample) if (use_llm and llm.available()) else None
+
+    best = None
+    for proposal in (candidate, _heuristic_propose(log_type, sample)):
+        if proposal is None:
+            continue
+        proposal["log_type"] = log_type
+        rate, parsed = _validate(proposal, sample)
+        proposal["_rate"], proposal["_parsed"] = rate, parsed
+        if best is None or rate > best["_rate"]:
+            best = proposal
+        if rate >= MIN_PARSE_RATE and parsed:
+            break
+
+    rate, parsed = best["_rate"], best["_parsed"]
+    best.pop("_rate", None)
+    best.pop("_parsed", None)
+    best["field_map"] = _derive_field_map(parsed)
+    best["validation"] = {
+        "tested": len(sample),
+        "parsed": len(parsed),
+        "rate": round(rate, 3),
+        "min_required": MIN_PARSE_RATE,
+        "has_timestamp": bool(parsed),
+    }
+    best["fingerprint"] = fp
+    best["name"] = f"{log_type}-schema"
+    best["source"] = source
+    best["sample"] = [str(s)[:500] for s in sample[:3]]
+
+    if rate >= MIN_PARSE_RATE and parsed:
+        registered = reg.register(best)
+        registered["reused"] = False
+        registered["registered"] = True
+        return registered
+
+    # A low-quality parser is returned for diagnostics but never registered for
+    # future reuse, preventing a bad schema from poisoning later batches.
+    best["reused"] = False
+    best["registered"] = False
+    return best
