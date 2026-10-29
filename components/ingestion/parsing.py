@@ -166,12 +166,47 @@ def _parse_leef(line: str) -> dict[str, Any] | None:
 
 
 def parse_record(schema: dict[str, Any], raw: Any) -> dict[str, Any] | None:
-    raise NotImplementedError(
-        "TODO P2: apply a registered schema (json/cef/leef/regex) to one raw record "
-        "and return a normalised document dict with a parsed @timestamp, or None if "
-        "it does not parse. "
-        "Reference implementation: sherlock-demo/ingestion/parsing.py."
-    )
+    kind = schema.get("parser", {}).get("kind", "json")
+    ts_field = schema.get("ts_field", "@timestamp")
+    ts_format = schema.get("ts_format", "auto")
+
+    if kind == "json":
+        doc = raw if isinstance(raw, dict) else _load_json(raw)
+        if doc is None:
+            return None
+        doc = dict(doc)
+    elif kind in ("cef", "leef"):
+        doc = _parse_cef(str(raw)) if kind == "cef" else _parse_leef(str(raw))
+        if doc is None:
+            return None
+    else:
+        # Regex parsers must consume the complete line; accepting partial matches
+        # would silently turn malformed records into apparently valid events.
+        pattern = schema["parser"]["pattern"]
+        try:
+            match = re.fullmatch(pattern, str(raw))
+        except re.error:
+            return None
+        if not match:
+            return None
+        doc = {key: value for key, value in match.groupdict().items() if value is not None}
+        for key in ("status", "size", "bytes", "response_bytes"):
+            if key in doc and str(doc[key]).isdigit():
+                doc[key] = int(doc[key])
+
+    timestamp_value = doc.get(ts_field)
+    used_field = ts_field
+    if timestamp_value is None and schema.get("ts_fallback"):
+        used_field = schema["ts_fallback"]
+        timestamp_value = doc.get(used_field)
+    timestamp = normalise_ts(timestamp_value, ts_format)
+    if timestamp is None:
+        return None
+    doc["@timestamp"] = timestamp
+    if used_field != "@timestamp":
+        doc.pop(used_field, None)
+    doc["log_type"] = schema["log_type"]
+    return doc
 
 
 def _load_json(raw: Any) -> dict[str, Any] | None:

@@ -66,12 +66,87 @@ def ingest_records(
     log_type: str, raw_records: list[Any], source: str, mode: str,
     refresh: bool = True, use_llm: bool = True,
 ) -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P2: detect/register schema on a sample, ensure the index, parse each "
-        "record, normalise to n_* when a SIEM schema is detected, bulk-index, and "
-        "return the ingest summary dict. "
-        "Reference implementation: sherlock-demo/ingestion/ingest_core.py."
+    if not raw_records:
+        return {
+            "ok": True,
+            "count_in": 0,
+            "count_indexed": 0,
+            "failures": 0,
+            "detail": "empty batch",
+        }
+
+    raw_records = [_maybe_json(record) for record in raw_records]
+    sample = raw_records[: min(200, len(raw_records))]
+    schema = detect_and_register(log_type, sample, source=source, use_llm=use_llm)
+    registered = schema.get("registered", True)
+
+    # P3 owns the seven-SIEM mapping. P2 invokes that stable boundary so records
+    # gain canonical n_* fields when the source format is recognised.
+    try:
+        siem_schema = detect_schema(sample[0]) if sample else None
+    except NotImplementedError:
+        # P2 must remain independently testable while P3's normalisation slot is
+        # still a scaffold. Once P3 is implemented this path is never taken.
+        siem_schema = None
+
+    docs: list[dict[str, Any]] = []
+    failures = 0
+    drift: dict[str, Any] = {"status": "skipped"}
+    index = log_index(log_type)
+    if registered:
+        ensure_log_index(index, schema.get("field_map"))
+        for record in raw_records:
+            doc = parse_record(schema, record)
+            if doc is None:
+                failures += 1
+                continue
+            if siem_schema:
+                doc.update(normalise(doc, siem_schema))
+
+            # Content-derived IDs make file replay and stream retries idempotent.
+            doc_id = hashlib.sha1(
+                json.dumps(doc, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            doc["_ingest"] = {"source": source, "mode": mode, "schema": schema["name"]}
+            doc["_id"] = doc_id
+            docs.append(doc)
+
+        drift = check_drift(log_type, docs, siem_schema or "")
+        indexed = bulk_index(index, docs, refresh=refresh) if docs else 0
+    else:
+        failures = len(raw_records)
+        indexed = 0
+
+    batch_rate = indexed / len(raw_records)
+    ok = registered and batch_rate >= 0.8
+    detail = (
+        "schema quarantined (validation below threshold)"
+        if not registered
+        else f"batch parse rate {batch_rate:.2f}"
     )
+
+    summary = {
+        "ok": ok,
+        "index": index,
+        "log_type": log_type,
+        "mode": mode,
+        "source": source,
+        "schema_name": schema.get("name"),
+        "schema_reused": schema.get("reused", False),
+        "schema_registered": registered,
+        "schema_version": schema.get("version"),
+        "parse_rate": schema.get("validation", {}).get("rate"),
+        "batch_parse_rate": round(batch_rate, 3),
+        "count_in": len(raw_records),
+        "count_indexed": indexed,
+        "failures": failures,
+        "created_by": schema.get("created_by"),
+        "detail": detail,
+        "siem_schema": siem_schema,
+        "drift": drift,
+    }
+    _audit(summary)
+    return summary
 
 
 def ingest_file(path: Path, mode: str = "pull", refresh: bool = True, use_llm: bool = True) -> dict[str, Any]:

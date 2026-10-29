@@ -135,11 +135,18 @@ def detect_schema(record: dict[str, Any] | str, raw: str | None = None) -> str |
     syslog prefix); parsed dicts by the presence of signature fields (flat or
     nested). Returns the schema id or None.
     """
-    raise NotImplementedError(
-        "TODO P3: identify which of the 7 SIEM schemas a record is in (CEF/LEEF by "
-        "wire prefix, others by >=2 signature fields) and return its id or None. "
-        "Reference implementation: sherlock-demo/common/schemas.py."
-    )
+    text = raw if raw is not None else (record if isinstance(record, str) else "")
+    if "CEF:" in text[:64]:
+        return "cef"
+    if "LEEF:" in text[:64]:
+        return "leef"
+    if not isinstance(record, dict):
+        return None
+    for schema, sig in _SIGNATURES:
+        hits = sum(1 for s in sig if get_path(record, s) is not None)
+        if hits >= 2:                       # ≥2 signature fields => confident match
+            return schema
+    return None
 
 
 def _norm_action(value: Any) -> str | None:
@@ -199,9 +206,27 @@ def normalise(record: dict[str, Any], schema: str) -> dict[str, Any]:
     the parsed `@timestamp`, since the schema-native timestamp field is consumed at
     parse time.
     """
-    raise NotImplementedError(
-        "TODO P3: map a parsed record of a known schema onto the canonical n_* "
-        "fields using SCHEMA_FIELDS, normalising n_action and n_severity, and return "
-        "the n_* dict. "
-        "Reference implementation: sherlock-demo/common/schemas.py."
-    )
+    fmap = SCHEMA_FIELDS.get(schema)
+    if not fmap:
+        return {}
+    out: dict[str, Any] = {}
+    for canon, src in fmap.items():
+        if not src or canon == "n_time":
+            continue
+        val = get_path(record, src)
+        if val is None:
+            continue
+        if canon == "n_action":
+            out[canon] = _norm_action(val)
+        elif canon == "n_severity":
+            out[canon] = _norm_severity(val, schema)
+        else:
+            out[canon] = val
+    ts = record.get("@timestamp")
+    if ts is None:
+        ts = get_path(record, fmap.get("n_time") or "")
+    if ts is not None:
+        out["n_time"] = ts
+    if out:
+        out["n_schema"] = schema
+    return out
