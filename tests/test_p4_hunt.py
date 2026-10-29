@@ -58,3 +58,93 @@ def test_scan_failed_or_empty_probes_are_inconclusive(monkeypatch):
     monkeypatch.setattr(heuristic, 'PROBES', [])
     result = invoke(heuristic.run_heuristic_hunt, 'question', Client(), EvidenceLedger('test', persist=False))
     assert result['verdict'] == 'inconclusive'
+
+
+def test_scan_with_no_hits_does_not_refute_any_hypothesis(monkeypatch):
+    p = heuristic.Probe('quiet', 'quiet', 'T1', 'quiet', 'low', lambda c, l: (None, True, None))
+    monkeypatch.setattr(heuristic, 'PROBES', [p])
+    monkeypatch.setattr(heuristic, 'SCENARIOS', [])
+    result = heuristic.run_heuristic_hunt('question', Client(), EvidenceLedger('test', persist=False))
+    assert result['verdict'] == 'inconclusive'
+
+
+def test_scenario_does_not_assert_uncorrelated_stages_form_an_attack_chain():
+    scenario = heuristic.Scenario('s', 'test', [heuristic.Stage('a', 'one'), heuristic.Stage('b', 'two')])
+    findings = [({'technique': 'a', 'severity': 'high', 'evidence_ids': ['E1']}), ({'technique': 'b', 'severity': 'high', 'evidence_ids': ['E2']})]
+    result = heuristic._scenario_finding(scenario, list(zip(scenario.stages, findings)))
+    assert 'not correlated' in result['claim'].lower()
+    assert 'kill-chain:' not in result['claim'].lower()
+
+
+def test_llm_malformed_structured_fields_return_inconclusive(monkeypatch):
+    class LLM:
+        model = 'test-model'
+        def agent_loop(self, *args, **kwargs):
+            return json.dumps({'verdict': 'confirmed', 'findings': 3})
+    monkeypatch.setattr(llm_hunt, 'LLMClient', LLM)
+    result = llm_hunt.run_llm_hunt('account', Client(), EvidenceLedger('test', persist=False))
+    assert result['verdict'] == 'inconclusive'
+    assert result['findings'] == []
+
+
+def test_llm_failed_tool_call_is_recorded(monkeypatch):
+    class FailingClient(Client):
+        def call(self, name, args):
+            raise RuntimeError('unavailable')
+    class LLM:
+        model = 'test-model'
+        def agent_loop(self, system, user, tools, on_event):
+            assert tools[0].fn({})['ok'] is False
+            return 'not json'
+    monkeypatch.setattr(llm_hunt, 'LLMClient', LLM)
+    ledger = EvidenceLedger('test', persist=False)
+    result = llm_hunt.run_llm_hunt('account', FailingClient(), ledger)
+    assert result['verdict'] == 'inconclusive'
+    assert ledger.entries[0].ok is False
+
+
+def test_mordor_source_is_scanned_with_raw_fields_and_evidence(monkeypatch):
+    monkeypatch.setattr(heuristic, 'PROBES', [])
+    monkeypatch.setattr(heuristic, 'SCENARIOS', [])
+    class MordorClient(Client):
+        def call(self, name, args):
+            if name == 'list_log_types':
+                return {'ok': True, 'log_types': [{'index': 'sherlock-logs-mordor_adduser', 'log_type': 'mordor_adduser', 'count': 1}]}
+            if name == 'get_field_mapping':
+                return {'ok': True, 'fields': {'EventID': 'long'}}
+            assert args['index'] == 'sherlock-logs-mordor_adduser'
+            return {'ok': True, 'matched_documents': 1 if args['query_string'] == 'EventID:4720' else 0}
+    ledger = EvidenceLedger('test', persist=False)
+    result = heuristic.run_heuristic_hunt('account', MordorClient(), ledger)
+    hits = [f for f in result['findings'] if f.get('probe') == 'mordor_account_creation']
+    assert len(hits) == 1
+    assert ledger.get(hits[0]['evidence_ids'][0]).matched_documents == 1
+    assert result['hypothesis_covered'] is False
+
+
+def test_absent_mordor_source_does_not_run_mordor_probes(monkeypatch):
+    monkeypatch.setattr(heuristic, 'PROBES', [])
+    monkeypatch.setattr(heuristic, 'SCENARIOS', [])
+    class EmptyClient(Client):
+        def call(self, name, args):
+            assert name == 'list_log_types'
+            return {'ok': True, 'log_types': []}
+    result = heuristic.run_heuristic_hunt('question', EmptyClient(), EvidenceLedger('test', persist=False))
+    assert result['coverage']['probes_run'] == 0
+
+
+def test_scoped_mordor_skips_unavailable_legacy_indices(monkeypatch):
+    legacy = heuristic.Probe('legacy', 'legacy', 'T', 'legacy', 'high', lambda c, l: (_ for _ in ()).throw(AssertionError('should not run')))
+    monkeypatch.setattr(heuristic, 'PROBES', [legacy])
+    monkeypatch.setattr(heuristic, 'SCENARIOS', [])
+    monkeypatch.setattr(heuristic, '_LEGACY_INDEX', {'legacy': heuristic.WIN})
+    class MordorClient(Client):
+        def call(self, name, args):
+            if name == 'list_log_types':
+                return {'ok': True, 'log_types': [{'index': 'sherlock-logs-mordor_adduser', 'log_type': 'mordor_adduser', 'count': 1}]}
+            if name == 'get_field_mapping':
+                return {'ok': True, 'fields': {'EventID': 'long'}}
+            return {'ok': True, 'matched_documents': 0}
+    result = heuristic.run_heuristic_hunt('question', MordorClient(), EvidenceLedger('test', persist=False))
+    assert result['coverage']['probe_errors'] == 0
+    assert result['coverage']['probes_skipped'] == 1

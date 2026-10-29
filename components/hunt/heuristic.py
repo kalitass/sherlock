@@ -25,6 +25,8 @@ verdict is still derived by hunt.reduce_verdict from verified evidence.
 """
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -271,8 +273,75 @@ PROBES: list[Probe] = [
     Probe("c2_beacon", "C2 beaconing", "T1071", "Command and Control", "critical", _c2_beacon),
 ]
 
+_LEGACY_INDEX = {"brute_force": WIN, "brute_force_success": WIN,
+                 "external_admin_logon": WIN, "new_admin_account": WIN,
+                 "log_cleared": WIN, "encoded_powershell": SYS,
+                 "webshell": WEB, "web_exploit": WEB, "c2_beacon": SYS}
+
 PROBE_BY_ID: dict[str, Probe] = {p.pid: p for p in PROBES}
 
+
+# Raw OTRF Security-Datasets probes from the reference implementation.
+_MORDOR_SPECS = [
+    ("account_creation", "EventID:4720", "T1136.001", "Create Account: Local Account", "high",
+     "Local user account creation observed (Security 4720)",
+     "No local-account-creation events were found."),
+    ("scheduled_task", 'CommandLine:*schtasks* AND CommandLine:*Create*', "T1053.005", "Scheduled Task", "high",
+     "Scheduled-task creation via schtasks observed",
+     "No scheduled-task creation was found."),
+    ("script_exec", "Image:*wscript.exe* OR Image:*cscript.exe*", "T1059.005",
+     "Command and Scripting Interpreter: Visual Basic", "high",
+     "Windows Script Host (wscript/cscript) execution observed",
+     "No Windows Script Host execution was found."),
+    ("encoded_powershell", "CommandLine:*-enc* OR CommandLine:*FromBase64String* OR CommandLine:*-EncodedCommand*",
+     "T1059.001", "PowerShell", "high",
+     "Encoded/obfuscated PowerShell execution observed",
+     "No encoded PowerShell execution was found."),
+    ("lsass_access", "EventID:10 AND TargetImage:*lsass.exe*", "T1003.001",
+     "OS Credential Dumping: LSASS Memory", "critical",
+     "A process opened a handle to LSASS memory (Sysmon 10)",
+     "No LSASS process-access events were found."),
+    ("sam_dump", "CommandLine:*esentutl* OR CommandLine:*\\\\SAM*", "T1003.002",
+     "OS Credential Dumping: Security Account Manager", "critical",
+     "SAM hive copy observed (esentutl / shadow copy)",
+     "No SAM-hive copy was found."),
+    ("lsa_secrets", "CommandLine:*reg* AND CommandLine:*secrets*", "T1003.004",
+     "OS Credential Dumping: LSA Secrets", "critical",
+     "LSA secrets dump via reg save observed",
+     "No LSA-secrets dump was found."),
+    ("disable_eventlog", "TargetObject:*Services*EventLog* OR TargetObject:*EventLog*Start*", "T1562.002",
+     "Impair Defenses: Disable Windows Event Logging", "high",
+     "Registry tampering with the Windows EventLog service observed",
+     "No EventLog-service tampering was found."),
+    ("disable_firewall", "CommandLine:*netsh* AND CommandLine:*firewall*", "T1562.004",
+     "Impair Defenses: Disable or Modify System Firewall", "high",
+     "Firewall modification via netsh observed",
+     "No firewall modification was found."),
+    ("log_cleared", "EventID:1102 OR EventID:104", "T1070.001",
+     "Indicator Removal: Clear Windows Event Logs", "high",
+     "Windows event log was cleared (1102/104)",
+     "No event-log clearing was found."),
+    ("group_discovery", "CommandLine:*localgroup*", "T1069.001",
+     "Permission Groups Discovery: Local Groups", "medium",
+     "Local-group enumeration (net localgroup) observed",
+     "No local-group enumeration was found."),
+    ("uac_bypass", "Image:*fodhelper.exe* OR CommandLine:*fodhelper*", "T1548.002",
+     "Abuse Elevation Control Mechanism: Bypass UAC", "high",
+     "UAC-bypass via fodhelper observed",
+     "No UAC-bypass via fodhelper was found."),
+    ("service_mod", "CommandLine:*sc* AND CommandLine:*config* AND CommandLine:*binPath*", "T1543.003",
+     "Create or Modify System Process: Windows Service", "high",
+     "Windows service reconfiguration (sc config binPath) observed",
+     "No service reconfiguration was found."),
+    ("proxy_mshta", "Image:*mshta.exe* OR CommandLine:*mshta*", "T1218.005",
+     "System Binary Proxy Execution: Mshta", "high",
+     "Signed-binary proxy execution via mshta observed",
+     "No mshta proxy execution was found."),
+    ("remote_service", "EventID:7045 OR EventID:4697", "T1021.002",
+     "Remote Services: SMB/Windows Admin Shares", "high",
+     "Windows service installation observed (7045/4697)",
+     "No service-installation events were found."),
+]
 
 # --- scenario layer: kill-chains composed of probe primitives ---------------
 @dataclass
@@ -312,8 +381,8 @@ def _scenario_finding(sc: Scenario, fired: list[tuple[Stage, dict[str, Any]]]) -
     eids = sorted({e for _, f in fired for e in (f.get("evidence_ids") or [])})
     n, total = len(fired), len(sc.stages)
     severity = "critical" if (n >= 3 or any(f["severity"] == "critical" for _, f in fired)) else "high"
-    claim = (f"Multi-stage {sc.name} kill-chain: {steps}. "
-             f"{n} of {total} kill-chain stages present.")
+    claim = (f"Potential {sc.name} scenario indicators: {steps}. "
+             f"{n} of {total} stages matched; events are not correlated by host or time.")
     return {"claim": claim, "evidence_ids": eids, "mitre": "kill-chain", "technique": sc.name,
             "severity": severity, "detail": "", "role": "positive",
             "scenario": sc.sid, "stages_present": n, "stages_total": total}
@@ -335,8 +404,13 @@ def run_heuristic_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedge
 
     findings = []
     fired = {}
-    errors = 0
+    errors = skipped = 0
+    available = {x.get("index") for x in sources.get("log_types", [])} if _ok(sources) else set()
     for probe in PROBES:
+        required_index = _LEGACY_INDEX.get(probe.pid)
+        if available and required_index and required_index not in available:
+            skipped += 1
+            continue
         on_event({"type": "probe", "name": probe.name, "mitre": probe.mitre})
         try:
             finding, ok, absence = probe.run(client, ledger)
@@ -354,6 +428,47 @@ def run_heuristic_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedge
             findings.append(item)
             on_event({"type": "finding", "finding": item})
 
+    # Detect raw Windows/Sysmon records by their mappings, and query each
+    # matching source separately. Unknown fields are skipped, not called absent.
+    mordor_runs = mordor_errors = mapping_errors = 0
+    mordor_detected = set()
+    mordor_probed = set()
+    raw_sources = []
+    for source in (sources.get("log_types", []) if _ok(sources) else []):
+        index = source.get("index", "")
+        if not (index.startswith("sherlock-logs-mordor_") or
+                index == os.environ.get("SHERLOCK_LOG_SCOPE", "")):
+            continue
+        mapping = client.call("get_field_mapping", {"index": index})
+        ledger.record("get_field_mapping", {"index": index}, mapping)
+        if not _ok(mapping):
+            mapping_errors += 1
+            continue
+        fields = mapping.get("fields", {})
+        raw_sources.append(index)
+        for pid, query, mitre, technique, severity, hit, _ in _MORDOR_SPECS:
+            required = set(re.findall(r"([A-Za-z][A-Za-z0-9_]*):", query))
+            if not required.issubset(fields):
+                continue
+            args = {"index": index, "query_string": query}
+            try:
+                response = client.call("count_logs", args)
+            except Exception as exc:
+                response = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            ev = ledger.record("count_logs", args, response)
+            mordor_runs += 1
+            mordor_probed.add(technique)
+            if not _ok(response):
+                mordor_errors += 1
+                continue
+            if _matched(response) > 0:
+                finding = _finding(f"{hit}: {_matched(response)} event(s) in {index}.",
+                                   [ev.evidence_id], mitre, technique, severity)
+                finding.update({"probe": f"mordor_{pid}", "addresses_hypothesis": False})
+                findings.append(finding)
+                mordor_detected.add(technique)
+                on_event({"type": "finding", "finding": finding})
+
     for scenario in SCENARIOS:
         stages = [(stage, fired[stage.probe]) for stage in scenario.stages if stage.probe in fired]
         if len(stages) >= 2:
@@ -362,11 +477,13 @@ def run_heuristic_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedge
             findings.append(item)
             on_event({"type": "finding", "finding": item})
 
-    verdict = "confirmed" if fired else ("refuted" if PROBES and not errors else "inconclusive")
-    coverage = {"mode": "scan", "probes_run": len(PROBES),
-                "probes_ok": len(PROBES) - errors, "probe_errors": errors,
-                "techniques_probed": sorted({p.technique for p in PROBES}),
-                "techniques_detected": sorted({p.technique for p in PROBES if p.pid in fired})}
+    verdict = "confirmed" if fired or mordor_detected else "inconclusive"
+    coverage = {"mode": "scan", "probes_run": len(PROBES) - skipped + mordor_runs,
+                "probes_skipped": skipped,
+                "probes_ok": len(PROBES) - skipped - errors + mordor_runs - mordor_errors, "probe_errors": errors + mordor_errors, "mapping_errors": mapping_errors,
+                "mordor_sources": raw_sources,
+                "techniques_probed": sorted({p.technique for p in PROBES if not available or not _LEGACY_INDEX.get(p.pid) or _LEGACY_INDEX[p.pid] in available} | mordor_probed),
+                "techniques_detected": sorted({p.technique for p in PROBES if p.pid in fired} | mordor_detected)}
     return {"verdict": verdict, "confidence": 0.6, "findings": findings,
             "coverage": coverage, "summary": "", "engine": "heuristic",
             "hypothesis_covered": False}
