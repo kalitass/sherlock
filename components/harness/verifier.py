@@ -27,9 +27,57 @@ def _role(f: dict[str, Any]) -> str:
 
 
 def verify_findings(findings: list[dict[str, Any]], ledger: EvidenceLedger) -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P5: verify each finding against the ledger: keep it only if every cited "
-        "id exists, is a query tool, ran OK, and matched in the finding's direction "
-        "(positive>=1 hit, negative=0); return verified/rejected split. "
-        "Reference implementation: sherlock-demo/hunt_engine/verifier.py."
-    )
+    """Accept a finding only when every citation is a supporting, successful query."""
+    verified, rejected = [], []
+    for finding in findings:
+        finding = dict(finding)
+        ids = finding.get("evidence_ids") or []
+        role = _role(finding)
+        cited = [(eid, ledger.get(eid)) for eid in ids]
+        missing = [eid for eid, entry in cited if entry is None]
+        context = [eid for eid, entry in cited if entry is not None and not entry.is_query_tool]
+        queries = [entry for _, entry in cited if entry is not None and entry.is_query_tool]
+        failed = [entry for entry in queries if not entry.ok]
+
+        def supports(entry: Any) -> bool:
+            matches = entry.matched_documents
+            if not isinstance(matches, int):
+                return False
+            return matches == 0 if role == "negative" else matches > 0
+
+        mismatch = [entry for entry in queries if entry.ok and not supports(entry)]
+        reasons = []
+        if not ids:
+            reasons.append("no evidence cited")
+        if missing:
+            reasons.append(f"hallucinated citation: non-existent evidence {missing}")
+        if context:
+            reasons.append(f"context tools cannot support a claim: {context}")
+        if failed:
+            reasons.append("a cited query failed to execute or returned an unknown result")
+        if mismatch:
+            direction = "0 hits" if role == "negative" else ">=1 hit"
+            reasons.append(f"a cited query did not match in the claim's direction (expected {direction})")
+
+        finding["role"] = role
+        finding["cited_matches"] = {
+            eid: entry.matched_documents if entry is not None else None
+            for eid, entry in cited
+        }
+        if not reasons:
+            finding["verified"] = True
+            verified.append(finding)
+        else:
+            finding["verified"] = False
+            finding["reject_reason"] = "; ".join(reasons)
+            rejected.append(finding)
+
+    total = len(findings)
+    return {
+        "verified_findings": verified,
+        "rejected_findings": rejected,
+        "verification_rate": round(len(verified) / total, 3) if total else 1.0,
+        "n_total": total,
+        "n_verified": len(verified),
+        "n_rejected": len(rejected),
+    }
