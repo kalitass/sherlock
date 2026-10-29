@@ -55,12 +55,32 @@ def reduce_verdict(hypothesis: str, candidate: str, verification: dict[str, Any]
                    coverage: dict[str, Any], ledger: EvidenceLedger,
                    hypothesis_covered: bool = True,
                    polarity: str = "affirmative") -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P5: re-derive the final verdict from VERIFIED, hypothesis-addressing "
-        "findings using supports_hypothesis (confirmed if any support it, refuted if "
-        "they argue against), never the engine's self-report. "
-        "Reference implementation: sherlock-demo/hunt_engine/reduce.py."
-    )
+    """Derive the verdict from verified findings that address the hypothesis."""
+    verified = verification["verified_findings"]
+    addressing = [f for f in verified if f.get("addresses_hypothesis", True)]
+    confirming = [f for f in addressing if _supports(f)]
+    refuting = [f for f in addressing if not _supports(f)]
+    any_query_failed = any(entry.is_query_tool and not entry.ok for entry in ledger.entries)
+
+    if not hypothesis_covered:
+        verdict, confidence = "inconclusive", 0.4
+    elif confirming:
+        verdict = "confirmed"
+        confidence = round(min(0.95, 0.6 + 0.1 * len(confirming)), 2)
+    elif refuting:
+        verdict, confidence = "refuted", 0.72
+    else:
+        verdict, confidence = "inconclusive", 0.4
+
+    return {
+        "verdict": verdict,
+        "confidence": confidence,
+        "candidate_verdict": candidate,
+        "hypothesis_polarity": polarity,
+        "hypothesis_covered": hypothesis_covered,
+        "summary": _summary(verdict, verified, confirming, refuting, verification,
+                            coverage, any_query_failed, hypothesis_covered),
+    }
 
 
 def _supports(f: dict[str, Any]) -> bool:
