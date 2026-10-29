@@ -231,12 +231,47 @@ def _condition_to_query(condition: str, blocks: dict[str, str]) -> str:
 
 # --- the migration ---------------------------------------------------------
 def migrate(text: str, use_llm: bool = True, llm: Any = None) -> MigratedRule:
-    raise NotImplementedError(
-        "TODO P3: parse a Sigma rule, map its fields to canonical n_* (deterministic "
-        "alias table + LLM fallback), translate selection+condition into one Lucene "
-        "query_string, and return the MigratedRule. "
-        "Reference implementation: sherlock-demo/detections/sigma_import.py."
-    )
+    rule = parse_sigma(text)
+    title = str(rule.get("title", "(untitled)"))
+    product = str((rule.get("logsource") or {}).get("product", ""))
+    mitre, technique = _tags_to_attack(rule.get("tags") or [])
+    severity = _LEVEL_TO_SEV.get(str(rule.get("level", "medium")).lower(), "medium")
+    detection = rule.get("detection") or {}
+    condition = str(detection.get("condition", "")).strip()
+
+    field_map: dict[str, str] = {}
+    unmapped: list[str] = []
+    for f in _collect_fields(detection):
+        nf = _map_field(f, use_llm, llm)
+        if nf:
+            field_map[f.lower()] = nf
+        else:
+            unmapped.append(f)
+
+    notes: list[str] = []
+    status = "migrated"
+    if unmapped:
+        status = "needs_review"
+        notes.append(f"unmapped fields: {sorted(set(unmapped))}")
+
+    query: str | None = None
+    try:
+        blocks = {name: _block_clause(block, field_map)
+                  for name, block in detection.items() if name != "condition"}
+        blocks = {k: v for k, v in blocks.items() if v}
+        if not condition:
+            raise Unsupported("no condition")
+        query = _condition_to_query(condition, blocks)
+        if not query.strip():
+            raise Unsupported("empty query after translation")
+    except Unsupported as e:
+        status = "needs_review"
+        notes.append(f"query not translated: {e}")
+        query = None
+
+    return MigratedRule(title=title, status=status, query_string=query, mitre=mitre,
+                        technique=technique, severity=severity, field_map=field_map,
+                        unmapped=sorted(set(unmapped)), notes=notes, product=product)
 
 
 # --- demo / validation against Elasticsearch -------------------------------
