@@ -326,9 +326,47 @@ def run_heuristic_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedge
     scans the data for every known attack pattern and reports what it finds (plus the
     kill-chains they compose). Matching a free-text hypothesis is the LLM engine's job.
     """
-    raise NotImplementedError(
-        "TODO P4: run the deterministic probe battery across the log indices, record "
-        "evidence to the ledger, and return a scan result with findings and a "
-        "candidate verdict. "
-        "Reference implementation: sherlock-demo/hunt_engine/heuristic.py."
-    )
+    try:
+        sources = client.call("list_log_types", {})
+    except Exception as exc:
+        sources = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    ev = ledger.record("list_log_types", {}, sources)
+    on_event({"type": "tool_result", "tool": "list_log_types", "result": ev.result_summary})
+
+    findings = []
+    fired = {}
+    errors = 0
+    for probe in PROBES:
+        on_event({"type": "probe", "name": probe.name, "mitre": probe.mitre})
+        try:
+            finding, ok, absence = probe.run(client, ledger)
+        except Exception as exc:
+            errors += 1
+            on_event({"type": "warning", "message": f"Probe {probe.pid} failed: {type(exc).__name__}"})
+            continue
+        if not ok:
+            errors += 1
+        if finding:
+            fired[probe.pid] = finding
+        item = finding or absence
+        if item:
+            item = dict(item, probe=probe.pid, addresses_hypothesis=False)
+            findings.append(item)
+            on_event({"type": "finding", "finding": item})
+
+    for scenario in SCENARIOS:
+        stages = [(stage, fired[stage.probe]) for stage in scenario.stages if stage.probe in fired]
+        if len(stages) >= 2:
+            item = _scenario_finding(scenario, stages)
+            item["addresses_hypothesis"] = False
+            findings.append(item)
+            on_event({"type": "finding", "finding": item})
+
+    verdict = "confirmed" if fired else ("refuted" if PROBES and not errors else "inconclusive")
+    coverage = {"mode": "scan", "probes_run": len(PROBES),
+                "probes_ok": len(PROBES) - errors, "probe_errors": errors,
+                "techniques_probed": sorted({p.technique for p in PROBES}),
+                "techniques_detected": sorted({p.technique for p in PROBES if p.pid in fired})}
+    return {"verdict": verdict, "confidence": 0.6, "findings": findings,
+            "coverage": coverage, "summary": "", "engine": "heuristic",
+            "hypothesis_covered": False}

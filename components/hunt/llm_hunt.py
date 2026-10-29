@@ -128,11 +128,13 @@ def build_tools(client: MCPClient, ledger: EvidenceLedger, on_event) -> list[Too
 
 def run_llm_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedger,
                  on_event=lambda e: None) -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P4: run the LLM agent loop over the MCP tool surface (recording every "
-        "call to the evidence ledger) and parse the model's final structured verdict. "
-        "Reference implementation: sherlock-demo/hunt_engine/llm_hunt.py."
-    )
+    llm = LLMClient()
+    tools = build_tools(client, ledger, on_event)
+    final = llm.agent_loop(SYSTEM, f"Hypothesis to test: {hypothesis}", tools, on_event=on_event)
+    result = _parse_final(final)
+    result["engine"] = f"llm:{llm.model}"
+    result["raw_final"] = final
+    return result
 
 
 _VERDICTS = {"confirmed", "refuted", "inconclusive"}
