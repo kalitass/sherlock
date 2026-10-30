@@ -128,11 +128,13 @@ def build_tools(client: MCPClient, ledger: EvidenceLedger, on_event) -> list[Too
 
 def run_llm_hunt(hypothesis: str, client: MCPClient, ledger: EvidenceLedger,
                  on_event=lambda e: None) -> dict[str, Any]:
-    raise NotImplementedError(
-        "TODO P4: run the LLM agent loop over the MCP tool surface (recording every "
-        "call to the evidence ledger) and parse the model's final structured verdict. "
-        "Reference implementation: sherlock-demo/hunt_engine/llm_hunt.py."
-    )
+    llm = LLMClient()
+    tools = build_tools(client, ledger, on_event)
+    final = llm.agent_loop(SYSTEM, f"Hypothesis to test: {hypothesis}", tools, on_event=on_event)
+    result = _parse_final(final)
+    result["engine"] = f"llm:{llm.model}"
+    result["raw_final"] = final
+    return result
 
 
 _VERDICTS = {"confirmed", "refuted", "inconclusive"}
@@ -157,13 +159,18 @@ def _sanitize_final(data: dict[str, Any]) -> dict[str, Any]:
         conf = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
     except (TypeError, ValueError):
         conf = 0.5
+    findings_raw = data.get("findings", [])
+    actions_raw = data.get("recommended_actions", [])
+    if not isinstance(findings_raw, list) or not isinstance(actions_raw, list):
+        raise ValueError("Invalid model output: findings and recommended_actions must be lists")
     findings = []
-    for f in (data.get("findings") or [])[:50]:
+    for f in findings_raw[:50]:
         if not isinstance(f, dict):
             continue
         sev = str(f.get("severity", "low")).lower()
         role = str(f.get("role", "positive")).lower()
-        eids = [e for e in (f.get("evidence_ids") or []) if isinstance(e, str) and _EID.match(e)][:10]
+        raw_eids = f.get("evidence_ids", [])
+        eids = [e for e in raw_eids if isinstance(e, str) and _EID.match(e)][:10] if isinstance(raw_eids, list) else []
         def _bool(v, default):
             return v if isinstance(v, bool) else (str(v).lower() in ("true", "1", "yes")
                                                   if v is not None else default)
@@ -182,7 +189,7 @@ def _sanitize_final(data: dict[str, Any]) -> dict[str, Any]:
             "addresses_hypothesis": addr,
             "supports_hypothesis": supports,
         })
-    actions = [_s(a, 300) for a in (data.get("recommended_actions") or [])[:20]]
+    actions = [_s(a, 300) for a in actions_raw[:20]]
     coverage = data.get("coverage") if isinstance(data.get("coverage"), dict) else {}
     return {"verdict": verdict, "confidence": conf, "summary": _s(data.get("summary"), 2000),
             "hypothesis_polarity": polarity,
@@ -197,4 +204,10 @@ def _parse_final(text: str) -> dict[str, Any]:
         return {"verdict": "inconclusive", "confidence": 0.0, "summary": _s(text, 800),
                 "hypothesis_polarity": "affirmative",
                 "findings": [], "coverage": {}, "recommended_actions": []}
-    return _sanitize_final(data)
+    try:
+        return _sanitize_final(data)
+    except (TypeError, ValueError):
+        return {"verdict": "inconclusive", "confidence": 0.0,
+                "summary": "Model output has invalid structured fields.",
+                "hypothesis_polarity": "affirmative", "findings": [],
+                "coverage": {}, "recommended_actions": []}
