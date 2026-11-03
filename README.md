@@ -16,15 +16,15 @@ the architecture, run, data and configuration details.
 
 ## Division of labour
 
-Five slices, one owner each; everyone owns a code area **+** a report section **+** a
+Five slices; everyone owns a code area **+** a report section **+** a
 block of the pitch deck. §1 (Executive Summary) and §7 (Conclusion) are written
-together. **Owners are not assigned yet** — fill the column once the team decides.
+together. **Group 4.**
 Details: [`docs/DIVISION.md`](docs/DIVISION.md), [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md).
 
 | Part | Owner | Code area | Report section | Pitch (14-page deck) |
 |---|---|---|---|---|
-| **P1 — Platform & orchestration** | ____ | `core/` (incl. MCP query-tool surface), `app/`, `docker/`, CI | §2 Architecture & reproducible setup | Part 1 — Cover · Problem |
-| **P2 — Ingestion** | ____ | `components/ingestion/` | §3 Ingestion & agentic auto-schema | Part 2 — The rule · How it works |
-| **P3 — Interoperability** | ____ | `components/normalization/`, `components/detection/` | §4 Normalise-first & Sigma | Part 3 — Key strengths |
-| **P4 — Hunt engine** | ____ | `components/hunt/` | §5 Agentic workflow design | Part 4 — Proof |
-| **P5 — Guardrails & evaluation** | ____ | `components/harness/`, `experiment/` | §6 Guardrails & experiment results | Part 5 — Why this approach · Conclusion · Team |
+| **P1 — Platform & orchestration** | Xu Zilong | `core/` (incl. MCP query-tool surface), `app/`, `docker/`, CI | §2 Architecture & reproducible setup | Part 1 — Cover · Problem |
+| **P2 — Ingestion** | Ma Yuzhe | `components/ingestion/` | §3 Ingestion & agentic auto-schema | Part 2 — The rule · How it works |
+| **P3 — Interoperability** | Gao Bin | `components/normalization/`, `components/detection/` | §4 Normalise-first & Sigma | Part 3 — Key strengths |
+| **P4 — Hunt engine** | Qin Ziyou · Liu Yang | `components/hunt/` | §5 Agentic workflow design | Part 4 — Proof |
+| **P5 — Guardrails & evaluation** | Bian Tianyue | `components/harness/`, `experiment/` | §6 Guardrails & experiment results | Part 5 — Why this approach · Conclusion · Team |

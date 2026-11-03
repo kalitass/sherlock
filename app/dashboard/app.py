@@ -25,6 +25,18 @@ from components.ingestion import schema_registry as reg
 from components.ingestion.ingest_core import ingest_records
 from core.pipeline import run_hunt
 
+# litellm (the hunt's LLM engine) lazily imports some submodules on first use. When
+# that first use happens inside the hunt WORKER THREAD, the lazy import races Python's
+# import machinery and raises "KeyError: 'litellm'" from litellm's own log filter,
+# which stalls the hunt at "connecting to hunt engine". Warm those submodules up here,
+# in the main thread at startup, so the worker thread never triggers a lazy import.
+try:
+    import litellm  # noqa: F401
+    import litellm.types.secret_managers.main  # noqa: F401
+    import litellm.rust_bridge.catalog  # noqa: F401
+except Exception:
+    pass
+
 app = FastAPI(title="Sherlock")
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -46,6 +58,9 @@ async def _security_headers(request: Request, call_next):
     resp.headers["Content-Security-Policy"] = _CSP
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
+    # Local lab dashboard: never cache, so a plain browser refresh always picks up
+    # the latest UI (the page is read from disk on every request anyway).
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
@@ -85,7 +100,15 @@ def _kibana_data_view() -> dict[str, Any] | None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
+def landing() -> str:
+    """Public landing page. 'Open the console' links through to /app."""
+    return (STATIC / "landing.html").read_text()
+
+
+@app.get("/app", response_class=HTMLResponse)
+def console() -> str:
+    """The hunt console (the workbench). All API calls use absolute /api/* paths,
+    so serving the same SPA under /app needs no other change."""
     return (STATIC / "index.html").read_text()
 
 

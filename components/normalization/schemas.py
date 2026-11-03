@@ -31,8 +31,7 @@ CANONICAL = [
 # Per-schema source field (or dotted path) for each canonical field. Values are
 # taken directly from the Week 2 mapping tables. None = the schema has no native
 # field for it (e.g. CEF/LEEF cannot express process lineage — slide 24).
-# Field maps corrected against the real schemas after an external review (see
-# docs/sherlock-spec changelog). For Authentication events specifically: n_time is
+# Field maps corrected against the real schemas after an external review. For Authentication events specifically: n_time is
 # taken from the parsed `@timestamp` (the native ts field is consumed at parse
 # time); mappings flagged as the wrong concept for Authentication are set to None.
 SCHEMA_FIELDS: dict[str, dict[str, str | None]] = {
@@ -89,6 +88,23 @@ SCHEMA_FIELDS: dict[str, dict[str, str | None]] = {
         "n_process": "principal.process.file.full_path", "n_parent": None,
         "n_cmdline": "principal.process.command_line", "n_sha256": "principal.process.file.sha256",
     },
+    # Raw Windows / Sysmon event logs (the source telemetry a SIEM itself ingests).
+    # Not one of the seven SIEM *interchange* schemas above -- this is the SOURCE
+    # normalisation a production SIEM does: map native Windows event fields onto the
+    # same canonical n_* set so one query spans Windows AND every SIEM format. A value
+    # may be a LIST of candidate fields (the event schema differs per EventID /
+    # Security vs Sysmon channel); normalise() takes the first one present.
+    "windows": {
+        "n_time": "@timestamp", "n_event_id": "EventID",
+        "n_host": ["Hostname", "Computer"],
+        "n_user": ["TargetUserName", "SubjectUserName", "SamAccountName", "User"],
+        "n_src_ip": ["IpAddress", "SourceIp"], "n_dst_ip": ["DestinationIp"],
+        "n_src_port": ["IpPort"], "n_dst_port": ["DestinationPort"],
+        "n_action": ["EventType"], "n_rule": None, "n_severity": ["Severity"], "n_url": None,
+        "n_process": ["Image", "NewProcessName", "SourceImage", "ProcessName"],
+        "n_parent": ["ParentImage", "ParentProcessName"],
+        "n_cmdline": ["CommandLine"], "n_sha256": ["Hashes", "SHA256"],
+    },
 }
 
 SCHEMAS = list(SCHEMA_FIELDS)
@@ -108,9 +124,9 @@ _SIGNATURES: list[tuple[str, tuple[str, ...]]] = [
 # Normalised outcome vocabulary — map each schema's native result token to pass/fail
 # by EXACT match (never substring: "not allowed" must not read as success). Auth
 # outcomes (Success/Failure/Failed/FAIL) plus firewall verbs for network events.
-_FAIL = {"failure", "fail", "failed", "deny", "denied", "block", "blocked"}
+_FAIL = {"failure", "fail", "failed", "deny", "denied", "block", "blocked", "audit_failure"}
 _PASS = {"success", "succeeded", "successful", "allow", "allowed", "accept",
-         "accepted", "pass", "passed", "permit", "permitted"}
+         "accepted", "pass", "passed", "permit", "permitted", "audit_success"}
 
 
 def get_path(record: dict[str, Any], path: str) -> Any:
@@ -146,6 +162,11 @@ def detect_schema(record: dict[str, Any] | str, raw: str | None = None) -> str |
         hits = sum(1 for s in sig if get_path(record, s) is not None)
         if hits >= 2:                       # ≥2 signature fields => confident match
             return schema
+    # Fallback: raw Windows / Sysmon event log (not a SIEM interchange schema, so it
+    # reaches here). Recognised by a numeric EventID plus a Windows marker.
+    if get_path(record, "EventID") is not None and any(
+            get_path(record, k) is not None for k in ("Channel", "Hostname", "ProviderGuid", "SourceName")):
+        return "windows"
     return None
 
 
@@ -213,7 +234,12 @@ def normalise(record: dict[str, Any], schema: str) -> dict[str, Any]:
     for canon, src in fmap.items():
         if not src or canon == "n_time":
             continue
-        val = get_path(record, src)
+        # A src may be a single field path or a list of candidates (Windows events
+        # name the same concept differently per EventID); take the first present.
+        if isinstance(src, (list, tuple)):
+            val = next((v for v in (get_path(record, s) for s in src) if v is not None), None)
+        else:
+            val = get_path(record, src)
         if val is None:
             continue
         if canon == "n_action":

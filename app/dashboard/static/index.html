@@ -172,7 +172,7 @@ table.fixed{table-layout:fixed}
 .bar.es i{background:var(--es)}
 
 /* ---------- KPI tiles ---------- */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
 .kpi{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;min-height:112px}
 .kpi .top{display:flex;align-items:center;justify-content:space-between;color:var(--mute);font-size:11.5px;font-weight:500;letter-spacing:.02em}
 .kpi .top svg.i{width:15px;height:15px;color:var(--ghost)}
@@ -410,12 +410,12 @@ td.when small{display:block;font-family:var(--mono);font-size:11px;color:var(--g
 <div class="app">
   <!-- ======================= sidebar ======================= -->
   <aside class="sidebar">
-    <div class="brand">
+    <a class="brand" href="/" title="Back to home">
       <div class="mark"><svg viewBox="0 0 1024 1024" aria-label="Sherlock"><!-- shield-check (user asset) -->
         <path fill-rule="evenodd" d="M848.350514 526.162558c2.260483-21.251 0-345.994152 0-345.994152-251.347538 10.864442-323.371922-94.27413-323.371922-94.27413-69.287039 100.757798-322.793754 94.187149-322.793754 94.187149s-6.571672 131.423215 0 370.176924c6.571672 238.752686 323.083349 313.225841 323.083349 313.225841C863.135242 764.367775 845.612147 551.899732 848.350514 526.162558zM495.697709 624.729457 335.797929 478.996328l41.617863-33.878598 86.520539 65.711608c0 0 117.185956-124.852566 233.276974-181.802626l17.523095 19.713994C714.736401 348.740706 561.409316 475.783147 495.697709 624.729457z"/>
       </svg></div>
       <div class="name">Sherlock<small>Agentic threat hunting</small></div>
-    </div>
+    </a>
     <nav class="nav" id="nav">
       <span class="lbl">Operate</span>
       <a data-view="hunt" class="active"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Hunt</a>
@@ -428,7 +428,8 @@ td.when small{display:block;font-family:var(--mono);font-size:11px;color:var(--g
       <a href="http://localhost:9200/_cat/indices?v" target="_blank" rel="noopener"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Elasticsearch<span class="ext"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg></span></a>
     </nav>
     <div class="side-foot">
-      <div class="status"><span class="dot" id="cluster-dot"></span><div><div id="cluster-txt">Connecting…</div><small id="cluster-sub">Elasticsearch · MCP</small></div></div>
+      <div class="status"><span class="dot" id="cluster-dot"></span><div><div id="cluster-txt">Connecting…</div><small id="cluster-sub">Elasticsearch</small></div></div>
+      <div class="status"><span class="dot" id="mcp-dot"></span><div><div id="mcp-txt">MCP</div><small id="tb-mcp">tool layer</small></div></div>
     </div>
   </aside>
 
@@ -440,7 +441,6 @@ td.when small{display:block;font-family:var(--mono);font-size:11px;color:var(--g
       <span class="pill hide-sm"><span class="k">events</span><b id="tb-events" class="num">—</b></span>
       <span class="pill hide-sm"><span class="k">sources</span><b id="tb-sources" class="num">—</b></span>
       <span class="pill" id="pill-llm" title="LLM provider"><span class="led" id="led-llm"></span><span class="k">LLM</span><b id="tb-llm">—</b></span>
-      <span class="pill hide-sm"><span class="k">mcp</span><b id="tb-mcp">—</b></span>
       <div class="theme-sw" id="theme-sw" role="radiogroup" aria-label="Colour theme" title="Colour theme">
         <button type="button" role="radio" data-theme="graphite" aria-checked="true"><span class="sw graphite"></span><span class="lb">Graphite</span></button>
         <button type="button" role="radio" data-theme="light" aria-checked="false"><span class="sw light"></span><span class="lb">Light</span></button>
@@ -507,7 +507,7 @@ td.when small{display:block;font-family:var(--mono);font-size:11px;color:var(--g
           <div class="card-bd">
             <div class="findings" id="findings"></div>
             <details class="rejected" id="rejected-wrap" hidden>
-              <summary><svg class="i" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span id="rejected-count">0 claims rejected by the guardrail</span></summary>
+              <summary><svg class="i" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span id="rejected-count">0 claims rejected by the verifier</span></summary>
               <div id="rejected"></div>
             </details>
           </div>
@@ -598,7 +598,6 @@ td.when small{display:block;font-family:var(--mono);font-size:11px;color:var(--g
         <div class="kpi"><div class="top">Events indexed<svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></div><div class="val" id="o-events">—</div><div class="sub">across all sources</div></div>
         <div class="kpi"><div class="top">Log sources<svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></div><div class="val" id="o-sources">—</div><div class="sub">one index per source</div></div>
         <div class="kpi"><div class="top">Registered schemas<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div><div class="val" id="o-schemas">—</div><div class="sub" id="o-schemas-sub">agent-built parsers</div></div>
-        <div class="kpi"><div class="top">Hunts persisted<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div class="val" id="o-hunts">—</div><div class="sub">with verdict and evidence</div></div>
       </div>
       <div class="grid-2">
         <div class="card"><div class="card-hd"><h3>Ingested sources <span class="cnt" id="src-count"></span></h3></div>
@@ -731,6 +730,21 @@ const TACTIC = {
   'T1021.002':'Lateral Movement',
 };
 const TACTIC_ORDER = ['Execution','Persistence','Privilege Escalation','Defense Evasion','Credential Access','Discovery','Lateral Movement'];
+/* Readable technique names — shown to people instead of the ATT&CK code. Codes are
+   never displayed in the UI; they remain only as internal keys for the tables above. */
+const TECH_NAME = {
+  'T1136.001':'Create Account: Local Account','T1053.005':'Scheduled Task',
+  'T1059.005':'Scripting: Visual Basic','T1059.001':'PowerShell',
+  'T1003.001':'Credential Dumping: LSASS Memory','T1003.002':'Credential Dumping: SAM',
+  'T1003.004':'Credential Dumping: LSA Secrets',
+  'T1562.002':'Impair Defenses: Disable Event Logging','T1562.004':'Impair Defenses: Disable Firewall',
+  'T1070.001':'Indicator Removal: Clear Event Logs','T1069.001':'Discovery: Local Groups',
+  'T1548.002':'Bypass User Account Control','T1543.003':'Persistence: Windows Service',
+  'T1218.005':'Proxy Execution: Mshta','T1021.002':'Remote Services: Admin Shares',
+  'T1087.001':'Discovery: Local Accounts',
+};
+/* Always returns a human-readable name, never a bare code. */
+const techName = f => (f && (f.technique || TECH_NAME[f.mitre] || TACTIC[f.mitre])) || '';
 const EXAMPLES = [
   'Was a backdoor local account created on this host?',
   'Was LSASS process memory accessed to steal credentials?',
@@ -798,7 +812,6 @@ async function loadOverview(){
     $('#o-events').textContent = fmtN(d.total_events);
     $('#o-sources').textContent = d.log_types.length;
     $('#o-schemas').textContent = d.n_schemas;
-    $('#o-hunts').textContent = d.n_hunts;
     const byLLM = d.schemas.filter(s=>s.by==='llm').length;
     $('#o-schemas-sub').innerHTML = byLLM ? `<b>${byLLM}</b> proposed by LLM · ${d.schemas.length-byLLM} heuristic` : 'agent-built parsers';
     $('#hunt-meta').innerHTML = `<b>LLM agent</b> · ${fmtN(d.total_events)} events across ${d.log_types.length} sources via MCP · <kbd>Enter</kbd> to run`;
@@ -816,7 +829,9 @@ async function loadOverview(){
 function setCluster(ok){
   $('#cluster-dot').className = 'dot' + (ok?'':' bad');
   $('#cluster-txt').textContent = ok ? 'Cluster healthy' : 'Cluster unreachable';
-  $('#cluster-sub').textContent = ok ? 'Elasticsearch · MCP ready' : 'check Elasticsearch';
+  $('#cluster-sub').textContent = ok ? 'Elasticsearch' : 'check Elasticsearch';
+  $('#mcp-dot').className = 'dot' + (ok?'':' bad');
+  $('#mcp-txt').textContent = ok ? 'MCP ready' : 'MCP';
 }
 
 /* ============================================================
@@ -892,11 +907,11 @@ function runHunt(){
     switch(e.type){
       case 'start': hunt.id=e.hunt_id; tl('sys',`hunt <b>${esc(e.hunt_id)}</b> · engine ${esc(e.engine)}`); huntCounters('Planning…',`hunt ${e.hunt_id} started`); break;
       case 'mcp': $('#tb-mcp').textContent=e.backend; tl('tool',`MCP connected · <b>${esc(e.backend)}</b> · ${(e.tools||[]).length} tools: <span class="dim">${esc((e.tools||[]).join(', '))}</span>`); huntCounters('Planning…',`mcp ${e.backend} · ${(e.tools||[]).length} tools`); break;
-      case 'probe': tl('probe',`probe ${esc(e.name)} <span class="dim">[${esc(e.mitre)}]</span>`); huntCounters('Probing…',e.name); break;
+      case 'probe': tl('probe',`probe ${esc(e.name)}`); huntCounters('Probing…',e.name); break;
       case 'tool_call': hunt.calls++; tl('tool',`<b>${esc(e.tool)}</b>(${esc(shortJSON(e.arguments))})${e.evidence_id?' <span class="dim">→ '+esc(e.evidence_id)+'</span>':''}${e.summary?' · '+esc(e.summary):''}`); huntCounters('Querying…',`${e.tool} ${shortJSON(e.arguments,60)}`); break;
       case 'tool_result': tl('tool',`<span class="dim">${esc(e.tool)} →</span> ${esc(shortJSON(e.result,160))}`); break;
       case 'thought': if(e.text) { tl('thought',esc(String(e.text).slice(0,220))); huntCounters('Reasoning…',String(e.text).slice(0,120)); } break;
-      case 'finding': { const f=e.finding||{}; hunt.findings++; tl('finding',`<b>${esc(sevOf(f).toUpperCase())}</b> ${esc(f.mitre||'')} — ${esc(f.claim||'')}`); huntCounters('Collecting findings…',f.claim||''); break; }
+      case 'finding': { const f=e.finding||{}; hunt.findings++; const tn=techName(f); tl('finding',`<b>${esc(sevOf(f).toUpperCase())}</b> ${tn?esc(tn)+' — ':''}${esc(f.claim||'')}`); huntCounters('Collecting findings…',f.claim||''); break; }
       case 'verdict': tl('verdict',`VERDICT ${esc(String(e.verdict).toUpperCase())} · confidence ${pct(e.confidence)} · integrity ${pct(e.verification_rate)}`); huntCounters('Verifying…','verdict reached · building report'); break;
       case 'error': tl('err','error: '+esc(e.message)); huntCounters('Error',e.message); break;
       case 'done': break;
@@ -924,7 +939,7 @@ function renderHunt(b, hyp){
   $('#v-integ').textContent=pct(v.verification_rate); $('#v-integ-bar').style.width=pct(v.verification_rate);
   $('#v-queries').textContent=ev.filter(e=>e.is_query_tool).length;
 
-  // findings — verified by the guardrail
+  // findings — verified by the verifier
   const vf=v.verified_findings||[], rf=v.rejected_findings||[];
   $('#findings-card').hidden=false; $('#findings-count').textContent=`${v.n_verified ?? vf.length} of ${v.n_total ?? (vf.length+rf.length)} claims verified`;
   const fw=$('#findings');
@@ -934,11 +949,11 @@ function renderHunt(b, hyp){
       return (e&&e.es_request) ? `<a class="epill" href="${esc(esLink(e))}" target="_blank" rel="noopener" title="Open ${esc(id)} in Kibana Discover${q?'\n'+esc(q):''}">${esc(id)}${IC.ext}</a>`
                                : `<span class="epill nolink" title="${esc(e?e.tool:'evidence')}">${esc(id)}</span>`; }).join('');
     const role = f.role==='negative' ? '<span class="tag" title="argues against the hypothesis">counter-evidence</span>' : '';
-    return `<div class="finding ${sev}"><div class="frow"><span class="sev ${sev}">${sev}</span><span class="tech"><span class="id">${esc(f.mitre||'')}</span>${f.technique?'· '+esc(f.technique):''}</span>${role}</div>
+    return `<div class="finding ${sev}"><div class="frow"><span class="sev ${sev}">${sev}</span><span class="tech">${esc(techName(f))}</span>${role}</div>
       <div class="claim">${esc(f.claim)}</div><div class="cite"><span class="k">evidence</span>${cites||'<span class="epill nolink">none</span>'}</div></div>`; }).join('')
     : '<div class="empty" style="grid-column:1/-1;padding:20px">No findings survived verification.</div>';
   const rw=$('#rejected-wrap'); rw.hidden=!rf.length; rw.open=false;
-  if(rf.length){ $('#rejected-count').textContent=`${rf.length} claim${rf.length===1?'':'s'} rejected by the guardrail`;
+  if(rf.length){ $('#rejected-count').textContent=`${rf.length} claim${rf.length===1?'':'s'} rejected by the verifier`;
     $('#rejected').innerHTML=rf.map(f=>`<div class="rj"><span class="x">✕</span><span><s>${esc(f.claim)}</s><br><em>${esc(f.reject_reason||'not backed by evidence')}</em></span></div>`).join(''); }
 
   // evidence table + report
@@ -981,8 +996,8 @@ function runScan(){
       case 'mcp': $('#tb-mcp').textContent=e.backend; tl('tool',`MCP connected · <b>${esc(e.backend)}</b> · ${(e.tools||[]).length} tools`); break;
       case 'tool_result': tl('tool',`<span class="dim">${esc(e.tool)} →</span> ${esc(shortJSON(e.result,140))}`); break;
       case 'tool_call': tl('tool',`<b>${esc(e.tool)}</b>(${esc(shortJSON(e.arguments))})`); break;
-      case 'probe': scan.probes++; scanProgress(); scanState('run','Scanning',`${e.mitre} · ${e.name}`); tl('probe',`<span class="dim">[${esc(e.mitre)}]</span> ${esc(e.name)}`); break;
-      case 'finding': { const f=e.finding||{}; if(f.role!=='negative'){ scan.det++; scanProgress(); tl('finding',`<b>${esc(sevOf(f).toUpperCase())}</b> ${esc(f.mitre||'')} — ${esc(f.claim||'')}`); } break; }
+      case 'probe': scan.probes++; scanProgress(); scanState('run','Scanning',e.name); tl('probe',`${esc(e.name)}`); break;
+      case 'finding': { const f=e.finding||{}; if(f.role!=='negative'){ scan.det++; scanProgress(); const tn=techName(f); tl('finding',`<b>${esc(sevOf(f).toUpperCase())}</b> ${tn?esc(tn)+' — ':''}${esc(f.claim||'')}`); } break; }
       case 'verdict': tl('verdict',`scan complete · ${esc(String(e.verdict).toUpperCase())}`); break;
       case 'error': tl('err','error: '+esc(e.message)); scanState('err','Error',e.message); break;
     }
@@ -1019,15 +1034,15 @@ function renderScan(b, when){
   const cols=[...TACTIC_ORDER, ...(groups.Other?['Other']:[])];
   $('#board').innerHTML=cols.map(t=>{ const list=(groups[t]||[]).sort((a,c)=>RANK[sevOf(a)]-RANK[sevOf(c)]);
     const chips=list.map(f=>{ const sev=sevOf(f); const e=(f.evidence_ids||[]).map(id=>evById[id]).find(Boolean); const cnt=e?(e.hit_count||0):null;
-      const nm=String(f.technique||'').split(':').pop().trim()||f.technique||'';
-      return `<div class="tchip ${sev}" title="${esc(f.claim||'')}"><div class="r1"><span class="id">${esc(f.mitre)}</span>${esBtn(e,'sm')}</div><div class="nm">${esc(nm)}</div><div class="ct">${cnt===null?'—':'<b>'+fmtN(cnt)+'</b> event'+(cnt===1?'':'s')} · ${sev}</div></div>`; }).join('');
+      const full=techName(f); const nm=String(full).split(':').pop().trim()||full;
+      return `<div class="tchip ${sev}" title="${esc(full||f.claim||'')}"><div class="r1"><span class="nm">${esc(nm)}</span>${esBtn(e,'sm')}</div><div class="ct">${cnt===null?'—':'<b>'+fmtN(cnt)+'</b> event'+(cnt===1?'':'s')} · ${sev}</div></div>`; }).join('');
     return `<div class="tactic"><h4><span>${esc(t)}</span><span class="n ${list.length?'':'zero'}">${list.length}</span></h4>${chips||'<div class="none">no detections</div>'}</div>`; }).join('');
 
   // recent detections — severity order
   const top=[...positives].sort((a,c)=>(RANK[sevOf(a)]-RANK[sevOf(c)])||((evById[(c.evidence_ids||[])[0]]||{}).hit_count||0)-((evById[(a.evidence_ids||[])[0]]||{}).hit_count||0));
   $('#recent-meta').textContent=positives.length;
   $('#recent').innerHTML=top.length?top.map(f=>{ const sev=sevOf(f); const e=(f.evidence_ids||[]).map(id=>evById[id]).find(Boolean); const cnt=e?(e.hit_count||0):null;
-    return `<div class="drow"><span class="sev ${sev}">${sev}</span><div class="t"><div class="claim" title="${esc(f.claim)}">${esc(f.claim)}</div><div class="sub"><span class="id">${esc(f.mitre)}</span><span>${esc(f.technique||'')}</span><span>· ${esc(TACTIC[f.mitre]||'')}</span></div></div>
+    return `<div class="drow"><span class="sev ${sev}">${sev}</span><div class="t"><div class="claim" title="${esc(f.claim)}">${esc(f.claim)}</div><div class="sub"><span>${esc(techName(f))}</span><span>· ${esc(TACTIC[f.mitre]||'')}</span></div></div>
       <div class="right"><span class="ct">${cnt===null?'':fmtN(cnt)+' event'+(cnt===1?'':'s')}</span>${esBtn(e)}</div></div>`; }).join('')
     : '<div class="empty">No detections.</div>';
 }

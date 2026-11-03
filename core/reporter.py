@@ -85,7 +85,7 @@ def build_report(meta: dict[str, Any], result: dict[str, Any],
         L.append(f"### F{i}. {_p(f.get('claim','(no claim)'))}")
         L.append("")
         L.append(f"- **Severity:** {f.get('severity','low').upper()}  ·  "
-                 f"**MITRE ATT&CK:** {_p(f.get('mitre','-'))} ({_p(f.get('technique','-'))})  ·  "
+                 f"**Technique:** {_p(f.get('technique') or f.get('mitre') or '-')}  ·  "
                  f"**Role:** {f.get('role','positive')}")
         if f.get("detail"):
             L.append(f"- **Detail:** {_p(f['detail'])}")
