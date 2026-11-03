@@ -200,6 +200,14 @@ def _litellm():
             litellm.set_verbose = False
         except Exception:
             pass
+        # Eagerly import the submodules litellm otherwise lazy-loads from inside its
+        # log filter: doing that lazily in a worker thread races the import machinery
+        # ("KeyError: 'litellm'") and stalls the caller. Harmless if already imported.
+        try:
+            import litellm.types.secret_managers.main  # noqa: F401
+            import litellm.rust_bridge.catalog  # noqa: F401
+        except Exception:
+            pass
         _LITELLM_CONFIGURED = True
     return litellm
 

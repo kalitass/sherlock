@@ -27,50 +27,49 @@ def _role(f: dict[str, Any]) -> str:
 
 
 def verify_findings(findings: list[dict[str, Any]], ledger: EvidenceLedger) -> dict[str, Any]:
-    """Accept a finding only when every citation is a supporting, successful query."""
     verified, rejected = [], []
-    for finding in findings:
-        finding = dict(finding)
-        ids = finding.get("evidence_ids") or []
-        role = _role(finding)
-        cited = [(eid, ledger.get(eid)) for eid in ids]
-        missing = [eid for eid, entry in cited if entry is None]
-        context = [eid for eid, entry in cited if entry is not None and not entry.is_query_tool]
-        queries = [entry for _, entry in cited if entry is not None and entry.is_query_tool]
-        failed = [entry for entry in queries if not entry.ok]
+    for f in findings:
+        eids = f.get("evidence_ids") or []
+        role = _role(f)
+        evs = [(e, ledger.get(e)) for e in eids]
+        missing = [e for e, ev in evs if ev is None]
+        query_evs = [ev for _, ev in evs if ev is not None and ev.is_query_tool]
 
-        def supports(entry: Any) -> bool:
-            matches = entry.matched_documents
-            if not isinstance(matches, int):
-                return False
-            return matches == 0 if role == "negative" else matches > 0
+        def _matches(ev) -> bool:
+            m = ev.matched_documents
+            if not isinstance(m, int):
+                return False               # unknown match count never supports
+            return (m == 0) if role == "negative" else (m > 0)
 
-        mismatch = [entry for entry in queries if entry.ok and not supports(entry)]
+        # Fail-closed: EVERY cited query must have executed and matched in the
+        # finding's direction. One failed/mismatched citation sinks the finding,
+        # so a multi-stage "A AND B" claim cannot pass on A alone.
+        all_ok = bool(query_evs) and all(ev.ok for ev in query_evs)
+        all_support = all_ok and all(_matches(ev) for ev in query_evs)
+
         reasons = []
-        if not ids:
+        if not eids:
             reasons.append("no evidence cited")
         if missing:
-            reasons.append(f"hallucinated citation: non-existent evidence {missing}")
-        if context:
-            reasons.append(f"context tools cannot support a claim: {context}")
-        if failed:
+            reasons.append(f"cites non-existent evidence {missing} (hallucinated citation)")
+        if eids and not missing and not query_evs:
+            reasons.append("cites only context tools, not a query that returns evidence")
+        if query_evs and not all(ev.ok for ev in query_evs):
             reasons.append("a cited query failed to execute or returned an unknown result")
-        if mismatch:
-            direction = "0 hits" if role == "negative" else ">=1 hit"
-            reasons.append(f"a cited query did not match in the claim's direction (expected {direction})")
+        if all_ok and not all_support:
+            reasons.append("a cited query did not match in the claim's direction "
+                           f"({'expected 0 hits' if role == 'negative' else 'expected >=1 hit'})")
 
-        finding["role"] = role
-        finding["cited_matches"] = {
-            eid: entry.matched_documents if entry is not None else None
-            for eid, entry in cited
-        }
-        if not reasons:
-            finding["verified"] = True
-            verified.append(finding)
+        f = dict(f)
+        f["role"] = role
+        f["cited_matches"] = {e: (ev.matched_documents if ev else None) for e, ev in evs}
+        if not missing and all_support:
+            f["verified"] = True
+            verified.append(f)
         else:
-            finding["verified"] = False
-            finding["reject_reason"] = "; ".join(reasons)
-            rejected.append(finding)
+            f["verified"] = False
+            f["reject_reason"] = "; ".join(reasons) or "unsupported"
+            rejected.append(f)
 
     total = len(findings)
     return {

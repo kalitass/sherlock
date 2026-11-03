@@ -1,20 +1,19 @@
-# Division of labour — template (Group [__])
+# Division of labour (Group 4)
 
-**Team:** Bian Tianyue · Gao Bin · Ma Yuzhe · Qin Ziyou · Xu Zilong
+**Team:** Bian Tianyue · Gao Bin · Liu Yang · Ma Yuzhe · Qin Ziyou · Xu Zilong
 
 The work splits into **five parts**. Each part is one code area + one report section
-+ a continuous block of the pitch. **The team has NOT assigned these yet** — this file
-only describes the five parts; fill the "Owner" column once you decide. One person per part.
++ a continuous block of the pitch. Owners are assigned below (P4 is shared by two members).
 
 ## The five parts
 
 | Part | Owner | Code area | Report section | Pitch slides (14-page deck) |
 |---|---|---|---|---|
-| **P1 — Platform & setup** | ____ | `core/` (pipeline, es, settings, **MCP query-tool surface**), `app/`, `docker/`, README | §2 Architecture & Reproducible Setup | 1 Cover · 3 Problem (divider 2) |
-| **P2 — Ingestion** | ____ | `components/ingestion/` (pull/push/stream, auto-schema) | §3 Ingestion & Agentic Auto-schema | 5 Rule · 6 How (divider 4) |
-| **P3 — Interoperability (normalise-first + Sigma)** | ____ | `components/normalization/`, `components/detection/` (Sigma) | §4 Interoperability — Normalise-first & Sigma | 8 Key strengths (divider 7) |
-| **P4 — Hunt engine (how the agent queries)** | ____ | `components/hunt/` (planner, executor, evidence ledger) | §5 Agentic Workflow Design | 10 Proof (divider 9) |
-| **P5 — Guardrails & experiments** | ____ | `components/harness/` (verifier, reducer), `experiment/` | §6 Guardrails & Experiment Results | 12 Why this approach · 13 Conclusion · 14 Team (divider 11) |
+| **P1 — Platform & setup** | Xu Zilong | `core/` (pipeline, es, settings, **MCP query-tool surface**), `app/`, `docker/`, README | §2 Architecture & Reproducible Setup | 1 Cover · 3 Problem (divider 2) |
+| **P2 — Ingestion** | Ma Yuzhe | `components/ingestion/` (pull/push/stream, auto-schema) | §3 Ingestion & Agentic Auto-schema | 5 Rule · 6 How (divider 4) |
+| **P3 — Interoperability (normalise-first + Sigma)** | Gao Bin | `components/normalization/`, `components/detection/` (Sigma) | §4 Interoperability — Normalise-first & Sigma | 8 Key strengths (divider 7) |
+| **P4 — Hunt engine (how the agent queries)** | Qin Ziyou · Liu Yang | `components/hunt/` (planner, executor, evidence ledger) | §5 Agentic Workflow Design | 10 Proof (divider 9) |
+| **P5 — Guardrails & experiments** | Bian Tianyue | `components/harness/` (verifier, reducer), `experiment/` | §6 Guardrails & Experiment Results | 12 Why this approach · 13 Conclusion · 14 Team (divider 11) |
 
 (§1 Executive Summary and §7 Conclusion are written together; P1 leads.)
 
